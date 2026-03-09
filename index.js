@@ -8,9 +8,18 @@ app.get('/', (req, res) => {
     res.send('Minber Scraper Service is running! Use /json/:city/:year/:month to fetch data.');
 });
 
+const cache = {};
+
 app.get('/json/:city/:year/:month', async (req, res) => {
     const { city, year, month } = req.params;
-    console.log(`[${new Date().toLocaleTimeString()}] Request received: /json/${city}/${year}/${month}`);
+    const cacheKey = `${city}-${year}-${month}`;
+
+    console.log(`[${new Date().toLocaleTimeString()}] Request: /json/${city}/${year}/${month}`);
+
+    if (cache[cacheKey]) {
+        console.log(`Serving from cache: ${cacheKey}`);
+        return res.json(cache[cacheKey]);
+    }
 
     if (!city || !year || !month) {
         return res.status(400).json({ error: 'Missing city, year, or month' });
@@ -18,7 +27,7 @@ app.get('/json/:city/:year/:month', async (req, res) => {
 
     let browser;
     try {
-        console.log(`[${new Date().toLocaleTimeString()}] Launching browser...`);
+        console.log(`[${new Date().toLocaleTimeString()}] Launching browser for ${city}...`);
         browser = await chromium.launch({ 
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
@@ -43,7 +52,8 @@ app.get('/json/:city/:year/:month', async (req, res) => {
             return response.json();
         }, apiRequestUrl);
 
-        console.log(`Successfully fetched data for ${city}.`);
+        console.log(`Successfully fetched data for ${city}. Saving to cache.`);
+        cache[cacheKey] = data;
         res.json(data);
     } catch (error) {
         console.error(`Error for ${city}:`, error);
