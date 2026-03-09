@@ -9,57 +9,80 @@ app.get('/', (req, res) => {
 });
 
 const cache = {};
+const CACHE_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+
+let browser;
+
+// Initialize browser once
+async function initBrowser() {
+    try {
+        browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        console.log('Global browser initialized.');
+    } catch (e) {
+        console.error('Failed to init browser:', e);
+    }
+}
+
+initBrowser();
 
 app.get('/json/:city/:year/:month', async (req, res) => {
     const { city, year, month } = req.params;
     const cacheKey = `${city}-${year}-${month}`;
 
-    console.log(`[${new Date().toLocaleTimeString()}] Request: /json/${city}/${year}/${month}`);
-
-    if (cache[cacheKey]) {
-        console.log(`Serving from cache: ${cacheKey}`);
-        return res.json(cache[cacheKey]);
+    // 1. Check Cache
+    if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < CACHE_TIMEOUT)) {
+        console.log(`[Cache Hit] Serving ${cacheKey}`);
+        return res.json(cache[cacheKey].data);
     }
 
     if (!city || !year || !month) {
         return res.status(400).json({ error: 'Missing city, year, or month' });
     }
 
-    let browser;
+    let page;
     try {
-        console.log(`[${new Date().toLocaleTimeString()}] Launching browser for ${city}...`);
-        browser = await chromium.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        });
+        if (!browser) await initBrowser();
+        
+        console.log(`[Scraping] ${city}...`);
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         });
-        const page = await context.newPage();
+        page = await context.newPage();
+
+        // SPEED OPTIMIZATION: Block unnecessary resources
+        await page.route('**/*', (route) => {
+            const type = route.request().resourceType();
+            if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+                route.abort();
+            } else {
+                route.continue();
+            }
+        });
 
         const targetUrl = `https://namaz.minber.az/${city}`;
-        console.log(`Navigating to ${targetUrl}...`);
-        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         
-        await page.waitForTimeout(3000);
+        // Wait just enough for the challenge to clear
+        await page.waitForTimeout(1500);
 
         const apiRequestUrl = `https://namaz.minber.az/json/${city}/${year}/${month}`;
-        console.log(`Fetching JSON from ${apiRequestUrl}...`);
-        
         const data = await page.evaluate(async (url) => {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return response.json();
         }, apiRequestUrl);
 
-        console.log(`Successfully fetched data for ${city}. Saving to cache.`);
-        cache[cacheKey] = data;
+        console.log(`[Success] ${city} cached.`);
+        cache[cacheKey] = { data, timestamp: Date.now() };
         res.json(data);
     } catch (error) {
-        console.error(`Error for ${city}:`, error);
-        res.status(500).json({ error: 'Failed to fetch prayer times: ' + error.message });
+        console.error(`[Error] ${city}:`, error.message);
+        res.status(500).json({ error: 'Scraping failed: ' + error.message });
     } finally {
-        if (browser) await browser.close();
+        if (page) await page.close();
     }
 });
 
