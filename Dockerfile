@@ -10,8 +10,8 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Install ONLY chromium to keep image size small
-RUN npx playwright install chromium
+# Install ONLY chromium with dependencies
+RUN npx playwright install --with-deps chromium
 
 # Copy local code to the container image.
 COPY . .

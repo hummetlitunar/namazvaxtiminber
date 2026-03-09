@@ -21,7 +21,7 @@ app.get('/json/:city/:year/:month', async (req, res) => {
         console.log(`[${new Date().toLocaleTimeString()}] Launching browser...`);
         browser = await chromium.launch({ 
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         });
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
