@@ -1,5 +1,5 @@
-# Use the official Playwright image that has all dependencies pre-installed
-FROM mcr.microsoft.com/playwright:v1.41.0-jammy
+# Use the official Playwright image
+FROM mcr.microsoft.com/playwright:v1.49.1-jammy
 
 # Create and change to the app directory
 WORKDIR /usr/src/app
@@ -9,6 +9,9 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
+
+# Install ONLY chromium to keep image size small
+RUN npx playwright install chromium
 
 # Copy local code to the container image.
 COPY . .
